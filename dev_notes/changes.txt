@@ -1,0 +1,23 @@
+solver improvements
+=================
+follow proper naming schemes for functions, variables, classes, file etc
+Maybe even reorganize and rename functions
+
+write seperate function for fft and ifft
+organise flow of calculations, remove redundancies
+include functions in SV itself to convert between physical and fourier space.
+Shift the a_rad constraints to callbacks.
+
+
+
+output to paraview
+3D version with 2D option
+Include test cases including isotropic turbulence
+
+output to paraview
+3D version with 2D option
+Equation reformulation
+
+
+need to brush up
+
