@@ -1,0 +1,64 @@
+notes
+=============
+
+make sure using Uf2_ and not Uf
+I guess need to unwrap loops to get best outof numba
+I guess only place were I can unwrap is array multiplications
+I don't think there will be much speed up since I don't have loops
+
+pyfftw
+-----------
+1. interface
+cache   --  speed up
+planner_effort='FFTW_ESTIMATE' -- not much effect
+threading  -- slowed
+empty aligned  --  negligibly slower
+convert to rfftn -- double speed
+
+2.object  --  no differnce after converting a conversions using objects
+  but faster if threads = 1 and normal numpy arrays used
+
+
+Profiling
+============
+python -m cProfile -o p0.prof PSNS_2D.py
+conda install snakeviz 
+snakeviz p0.prof
+
+Things to do
+===================
+implement general callback function
+save outputs function and auto save
+Then a function to port to matlab format (should have the ability to save only a small region around the vortex)
+Function to compute gradients
+A function to upscale the results?
+
+Data class
+
+Callbacks maybe done in a slightly more sophisticated way in which there is a callback generator or something like that?
+
+In future maybe make a julia or cpp version of this
+Need to create a few solvers in cpp to learn templates and all
+not sure if that will be useful may for later.
+
+I guess the 3D version of the solver maybe written in julia with gpu support
+Julia good gpu support try to write the solver in julia 
+Not now, remain focused on the task now
+
+I guess i can again optimise by computing the fft for all the quantiies before hand and not again and again 
+for all the callbacks.
+
+I guess there is something wrong in my streamfunction calculation , del^2(PSI) = -omega (is it valid even if it is moving?) I guess so
+
+Check the condition
+A new error when calculation vorticity
+Mostly would have to implement some kind of filtering scheme I still don't 
+what the problem is 
+
+What if  specify the initial conditions in terms of W and not U
+
+Check energy and enstropy and see if it is growing
+
+One thing i can do is test the stability for know flow fields like Lamb Chaplygin dipole
+
+Maybe also develope the other solver and do the simulation in that as well
