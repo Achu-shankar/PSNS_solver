@@ -7,7 +7,7 @@ import time
 import pickle 
 # from numba import jit, njit
 # from accelerate import profiler
-from PSNS_Callbacks import CallbackVars, Callbacks,computeKE,vortexPairDriftVelCorrec,vortexPairCenter
+from PSNS_Callbacks import CallbackVars, Callbacks,computeKE,vortexPairDriftVelCorrec,vortexPairCenter,vortexPairEulerResidue
 from DataTypes import *
 
 try:
@@ -110,7 +110,7 @@ def solve_RK4(SV,CBV):
       else:
         SV.Uf2_ = np.copy(SV.Uf_)
 
-      vortexPairDriftVelCorrec(SV,CBV)
+      # vortexPairDriftVelCorrec(SV,CBV)
       # _,Xcind = vortexPairCenter(SV.Uf2_,SV)   # later modify to vortex center based on vorticity moments
       # xc_ind,yc_ind = int(Xcind[0,0]),int(Xcind[1,0])
       # for i in range(2): SV.U[i,:,:] = irfft2(SV.Uf2_[i])
@@ -121,6 +121,7 @@ def solve_RK4(SV,CBV):
 
     SV.it = it
     Callbacks(SV,CBV)
+    # vortexPairEulerResidue(SV,CBV)
     a_rad = np.sqrt(CBV.vortex_pair_rad[0,0,it]**2 + CBV.vortex_pair_rad[1,0,it]**2)
 
     if a_rad>SV.a_targ[a_targ_ind]:
@@ -146,6 +147,7 @@ def solve_RK4(SV,CBV):
     # computeKE(SV,CBV)
 
   for i in range(2): SV.Ut[i,:,:,-1] = irfft2(SV.Uf[i])
+  print(SV.it)
       
   # return SV,CB_vars
 

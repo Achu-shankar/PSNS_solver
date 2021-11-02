@@ -32,6 +32,13 @@ class CallbackVars:
     self.temp1                   = np.zeros((SV.nt+1),dtype=dtype_re)
     self.temp2                   = np.zeros((SV.nt+1),dtype=dtype_re)
 
+    self.temp_q = np.zeros((SV.nx,SV.ny))
+    self.temp_ux = np.zeros((SV.nx,SV.ny))
+    self.temp_uy = np.zeros((SV.nx,SV.ny))
+    self.temp_wx = np.zeros((SV.nx,SV.ny))
+    self.temp_wy = np.zeros((SV.nx,SV.ny))
+    self.temp_w = np.zeros((SV.nx,SV.ny))
+
 def Callbacks(SV,CBV):
     # pass
     # computeKE(SV,CBV)
@@ -288,11 +295,12 @@ def vortexPairEulerResidue(SV,CBV):
   # N = [<u.del omega>^2/<omega^2>]^1/2
 
   for i in range(2): SV.U[i,:,:] = irfft2(SV.Uf[i])
+  Uf = rfft2(SV.U)
 
-  Xc,Xcind = vortexPairCenterVortCentroid(SV.Uf,SV)
+  Xc,Xcind = vortexPairCenterVortCentroid(Uf,SV)
 
-  SV.Wf = PSNS_2D.vorticity2D_f(SV.Uf,SV)
-  SV.W  = PSNS_2D.vorticity2D(SV.Uf,SV)
+  SV.Wf = PSNS_2D.vorticity2D_f(Uf,SV)
+  SV.W  = PSNS_2D.vorticity2D(Uf,SV)
 
   Wx_f  = 1j*SV.Wf*SV.K[0]*SV.fou_filt
   Wy_f  = 1j*SV.Wf*SV.K[1]*SV.fou_filt
@@ -334,12 +342,17 @@ def vortexPairEulerResidue(SV,CBV):
 
   A = np.sum(np.square(SV.U[0,x1:x2,y1:y2]*Wx[x1:x2,y1:y2] + SV.U[1,x1:x2,y1:y2]*Wy[x1:x2,y1:y2]))*SV.dx*SV.dy
   B = np.sum(np.square(SV.W[x1:x2,y1:y2]))*SV.dx*SV.dy
-
-  file_out = open("Euler_Res.txt","a")
-  file_out.write(str((ER_numer/ER_denom)**0.5)+" "+str((A/B)**0.5)+" "+str(ER_numer)+"\n")
-  file_out.close()
-  # print(limits)
-
+  # if SV.it==500:
+  #   CBV.temp_q = Q
+  #   file_out = open("Euler_Res.txt","a")
+  #   file_out.write(str((ER_numer/ER_denom)**0.5)+" "+str((A/B)**0.5)+" "+ str(ER_numer)+"\n")
+  #   file_out.close()
+  #   print(limits)
+  #   CBV.temp_ux = SV.U[0]
+  #   CBV.temp_uy = SV.U[1]
+  #   CBV.temp_wx = Wx
+  #   CBV.temp_wy = Wy
+  #   CBV.temp_w  = SV.W
 
 def vortexPairGamma(SV,CBV):
   pass
