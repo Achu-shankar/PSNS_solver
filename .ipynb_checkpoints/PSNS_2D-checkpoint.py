@@ -7,17 +7,15 @@ import time
 import pickle 
 # from numba import jit, njit
 # from accelerate import profiler
-from PSNS_Callbacks import CallbackVars, Callbacks,computeKE
+from PSNS_Callbacks import CallbackVars, Callbacks,computeKE,vortexPairDriftVelCorrec,vortexPairCenter,vortexPairEulerResidue
 from DataTypes import *
-
-
 
 try:
   from pyfftw.interfaces.numpy_fft import fft2, ifft2, irfft2, rfft2
   import pyfftw
   pyfftw.interfaces.cache.enable()
   pyfftw.interfaces.cache.set_keepalive_time(60)
-  pyfftw.config.NUM_THREADS = 4
+  pyfftw.config.NUM_THREADS = 32
   pyfftw.config.PLANNER_EFFORT = 'FFTW_MEASURE'
   # pyfftw.config.PLANNER_EFFORT = 'FFTW_ESTIMATE'
 except ImportError:
@@ -72,6 +70,12 @@ class SolverVars:
     self.dealias = np.zeros((nx,nf))
     self.K_K_sq =  np.zeros((2,nx,nf))
 
+    self.fou_filt =  np.zeros((nx,nf))
+
+    self.a_targ = [np.Inf]
+    self.padx = 100
+    self.pady = 100
+
     # self.Wf  = pyfftw.empty_aligned((nx,nf), dtype='complex64')
     # self.W   = pyfftw.empty_aligned((nx,ny),dtype='float32') 
     # self.UxWf  = pyfftw.empty_aligned((2,nx,nf),dtype='complex64') #better than creating these at each and every time step
@@ -86,6 +90,7 @@ class SolverVars:
     # self.U_nonLin_ifft_obj = pyfftw.builders.irfft2(self.Uf_temp)
 
 def solve_RK4(SV,CBV):  
+  a_targ_ind = 0
   # RK-4 vars
   aa = np.array([1.0/6.0,1.0/3.0,1.0/3.0,1.0/6.0])
   bb = np.array([0,0.5,0.5,1])
@@ -95,27 +100,54 @@ def solve_RK4(SV,CBV):
 
   # compute wavespace vectors
   wavespace(SV)
-
-  for it in range(SV.nt+1):
+  SV.it = 0
+  Callbacks(SV,CBV)
+  for it in range(1,SV.nt+1):
     SV.Uf_ = np.copy(SV.Uf)
     for rk in range(4):
       if rk>0:
         SV.Uf2_ = SV.Uf_ + SV.dUf*bb[rk]*SV.dt
       else:
         SV.Uf2_ = np.copy(SV.Uf_)
+
+      # vortexPairDriftVelCorrec(SV,CBV)
+      # _,Xcind = vortexPairCenter(SV.Uf2_,SV)   # later modify to vortex center based on vorticity moments
+      # xc_ind,yc_ind = int(Xcind[0,0]),int(Xcind[1,0])
+      # for i in range(2): SV.U[i,:,:] = irfft2(SV.Uf2_[i])
+      # vel = SV.U[1,xc_ind,yc_ind]
+      # print(vel)
       computeRHS(SV)
-      SV.Uf = SV.Uf + aa[rk]*SV.dt*SV.dUf 
+      SV.Uf = SV.Uf + aa[rk]*SV.dt*SV.dUf
+
+    SV.it = it
+    Callbacks(SV,CBV)
+    # vortexPairEulerResidue(SV,CBV)
+    a_rad = np.sqrt(CBV.vortex_pair_rad[0,0,it]**2 + CBV.vortex_pair_rad[1,0,it]**2)
+
+    if a_rad>SV.a_targ[a_targ_ind]:
+      for i in range(2): SV.Ut[i,:,:,-1] = irfft2(SV.Uf[i])
+      print("a== ",a_rad, "  -- Finishing simulation -- ", "Iteration == ", it)
+      
+      if a_targ_ind < len(SV.a_targ)-1:
+        a_targ_ind = a_targ_ind + 1
+      else:
+        break
+      
+    # for i in range(2): SV.U[i,:,:] = irfft2(SV.Uf[i])
+    # vel = (CBV.vortex_pair_drift_vel[0,it]-CBV.vortex_pair_drift_vel[0,it-1])
+    # SV.U[1] = SV.U[1] + (1-np.exp(-1/0.2**2))
+    # for i in range(2): SV.Uf[i] =  rfft2(SV.U[i])
+    # print(CBV.vortex_pair_drift_vel[0,it-1])
 
     if it%SV.anim_s ==0:
-      print("Iteration == ", it)
+      print("Iteration == ", it, "a_rad == ", a_rad)
       for i in range(2): SV.Ut[i,:,:,int(it/SV.anim_s)] = irfft2(SV.Uf[i])
-    SV.it = it
+    
     # ComputeAllFlowQuantities()
-
-    Callbacks(SV,CBV)
     # computeKE(SV,CBV)
 
-  for i in range(2): SV.Ut[i,:,:,int(it/SV.anim_s)] = irfft2(SV.Uf[i])
+  for i in range(2): SV.Ut[i,:,:,-1] = irfft2(SV.Uf[i])
+  print(SV.it)
       
   # return SV,CB_vars
 
@@ -144,35 +176,40 @@ def wavespace(SV):
       )
   SV.K_K_sq = SV.K.astype(dtype_re)/np.where(SV.K_sq==0,1,SV.K_sq).astype(dtype_re)
 
+  alpha = 36
+  m = 36
+  SV.fou_filt = np.exp(-alpha*(2*np.abs(SV.K[0])/SV.nx)**m)*np.exp(-alpha*(2*np.abs(SV.K[1])/SV.ny)**m)
+
 def generate_mesh(SV):
   x = np.arange(SV.xR[0],SV.xR[1],SV.dx,dtype = dtype_re)
   y = np.arange(SV.yR[0],SV.yR[1],SV.dy,dtype = dtype_re)
   SV.Mesh[0],SV.Mesh[1] = np.meshgrid(x,y,indexing='ij')
 
 def computeRHS(SV):
-  nf = SV.ny
-  # non-linear term
+  # compute non-linear term
   nonLin2D_2b3(SV) 
 
-  # pressure term
+  # compute pressure term
   SV.Pdf = SV.K*np.sum(SV.K_K_sq*SV.UxWf,axis=0)
 
-  # viscous term
+  # compute viscous term
   SV.Visf = SV.nu*SV.K_sq*SV.Uf2_
 
   # RHS
   SV.dUf = SV.UxWf - SV.Visf - SV.Pdf
 
 def nonLin2D_2b3(SV):  
-  SV.Uf_temp = SV.Uf2_*SV.dealias 
-  # SV.Uf_temp = SV.Uf2_
+  SV.Uf_temp = SV.Uf2_
+  SV.W = vorticity2D(SV.Uf_temp,SV)
+  # SV.Uf_temp = SV.Uf2_*SV.dealias 
+  SV.Uf_temp = SV.Uf2_*SV.fou_filt  
   for i in range(2): SV.U[i] = irfft2(SV.Uf_temp[i])  
   # SV.U = SV.U_nonLin_ifft_obj(SV.Uf_temp)
   # SV.U[:,:,:] = SV.U_nonLin_ifft_obj()
   
-  SV.W = vorticity2D(SV.Uf_temp,SV)
   # SV.U = irfft2(SV.Uf2_)
   # SV.W = vorticity2D_fd(SV.U,SV)
+  # print('here')
   
   SV.UxW[0]  =  SV.U[1]*SV.W
   SV.UxW[1]  = -SV.U[0]*SV.W
@@ -180,24 +217,27 @@ def nonLin2D_2b3(SV):
   SV.UxWf[1] =  rfft2(SV.UxW[1])
   # SV.UxWf    =  SV.UxW_fft_obj(SV.UxW)
   # SV.UxWf[:,:,:]    =  SV.UxW_fft_obj()
-  SV.UxWf    =  SV.UxWf*SV.dealias 
-  
+  # SV.UxWf    =  SV.UxWf*SV.dealias 
+  SV.UxWf    =  SV.UxWf*SV.fou_filt 
+  # SV.UxWf    =  SV.UxWf
 
 def vorticity2D(Uf,SV): 
-  SV.Wf = (1j*(SV.K[0]*Uf[1] - SV.K[1]*Uf[0]))
+  # SV.Wf = (1j*(SV.K[0]*Uf[1] - SV.K[1]*Uf[0]))*SV.dealias 
+  SV.Wf = (1j*(SV.K[0]*Uf[1] - SV.K[1]*Uf[0]))*SV.fou_filt 
+  # SV.Wf = (1j*(SV.K[0]*Uf[1] - SV.K[1]*Uf[0])) 
   SV.W  = irfft2(SV.Wf)
   # SV.W = SV.W_ifft_obj(SV.Wf)
   # SV.W[:,:] = SV.W_ifft_obj()
   return SV.W
 
 def vorticity2D_fd(U,SV): 
-  SV.W  = np.gradient(U[1],SV.dx,axis=0) - np.gradient(U[0],SV.dy,axis=1)
+  SV.W  = np.gradient(U[1],SV.dx,axis=0,edge_order=2) - np.gradient(U[0],SV.dy,axis=1,edge_order=2)
   return SV.W
 
 def vorticity2D_f(Uf,SV): 
   SV.Wf = (1j*(SV.K[0]*Uf[1] - SV.K[1]*Uf[0]))
   return SV.Wf
-# Computes Streamfunction
+
 def streamfunction(Uf,SV): 
   Wf = np.zeros((SV.nx,SV.ny),dtype = dtype_comp)
   Wf = vorticity2D_f(Uf,SV)
@@ -213,9 +253,39 @@ def velGradient(Uf,SV):
 
   return dudx, dudy, dvdx, dvdy
 
-def save(SV,CBV):
-  filename = r'E:/OneDrive/Research/code/PsuedoSpecNS/ouputs/data.pkl'
+def save(SV,CBV,res,filename):
+  # filename = r'E:/OneDrive/Research/code/PsuedoSpecNS/ouputs/data.pkl'
   open_file = open(filename, "wb")
   pickle.dump(SV, open_file)
   pickle.dump(CBV, open_file)
+  pickle.dump(res, open_file)
   open_file.close()
+
+def interpolate(x,y,Q,SV):
+  X = SV.Mesh
+  xind1,xind2 = np.argpartition(np.abs(X[0,:,0]-x),2)[0:2]
+  yind1,yind2 = np.argpartition(np.abs(X[1,0,:]-y),2)[0:2]
+
+  x1 = X[0,xind1,0]
+  x2 = X[0,xind2,0]
+  y1 = X[1,0,yind1]
+  y2 = X[1,0,yind2]
+
+  Q11 = xind1,yind1
+  Q12 = xind1,yind2
+  Q21 = xind2,yind1 
+  Q22 = xind2,yind2
+  
+  f11 = Q[Q11]
+  f12 = Q[Q12]
+  f21 = Q[Q21]
+  f22 = Q[Q22]
+
+  # bilinear interpolation  https://en.wikipedia.org/wiki/Bilinear_interpolation
+  f = (1/((x2-x1)*(y2-y1)))*(  \
+          (f11*(y2-y)+f12*(y-y1))*(x2-x) + \
+          (f21*(y2-y)+f22*(y-y1))*(x-x1)   \
+                           )
+  # print(f11,f12,f21,f22)
+  return f
+  # print(xind1,xind2)

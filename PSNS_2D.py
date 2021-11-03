@@ -15,7 +15,7 @@ try:
   import pyfftw
   pyfftw.interfaces.cache.enable()
   pyfftw.interfaces.cache.set_keepalive_time(60)
-  pyfftw.config.NUM_THREADS = 4
+  pyfftw.config.NUM_THREADS = 32
   pyfftw.config.PLANNER_EFFORT = 'FFTW_MEASURE'
   # pyfftw.config.PLANNER_EFFORT = 'FFTW_ESTIMATE'
 except ImportError:
@@ -140,7 +140,7 @@ def solve_RK4(SV,CBV):
     # print(CBV.vortex_pair_drift_vel[0,it-1])
 
     if it%SV.anim_s ==0:
-      print("Iteration == ", it)
+      print("Iteration == ", it, "a_rad == ", a_rad)
       for i in range(2): SV.Ut[i,:,:,int(it/SV.anim_s)] = irfft2(SV.Uf[i])
     
     # ComputeAllFlowQuantities()
